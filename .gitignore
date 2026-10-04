@@ -13,3 +13,7 @@ agent-work/
 agent-run.jsonl
 *demo*.log
 kvdisk/
+
+# panel runtime logs / 面板运行日志
+records/panel/
+

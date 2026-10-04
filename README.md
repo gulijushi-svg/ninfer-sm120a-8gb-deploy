@@ -21,6 +21,10 @@ sha256 `5C4486C8A52687E3F62072C7DD2A320546D0E00D1C019BF137EB02CC944E21B8`）。
 2. 聊天页：双击 **`chat-web.bat`** → <http://127.0.0.1:8097/>
 3. 终端聊天 `chat-cli.bat` · AI agent `agent\agent.bat` · 用量看板 `usage.bat` → <http://127.0.0.1:8098/>
 4. 单机自用：`start-ptq1-mtp-8gb.bat`（只绑 127.0.0.1，不起统计口与日志）
+5. 面板 / 桌面应用：双击 **`panel-app.bat`**（可在桌面放一个指向它的快捷方式）
+   → 自动起面板服务并用 Edge/Chrome 的**无地址栏窗口**打开 <http://127.0.0.1:8093/>
+6. 集显分担显示的本机档：双击 **`start-ninfer.bat`**（链式尝试
+   igpu 15360 → 12288 → 7168 → tight，成功即停）
 
 ## 六档启动器（每个只管一件事，方便一次只改一个变量）
 
@@ -76,6 +80,8 @@ max_context  262144 ->  6.28 GiB     524288 -> 12.56 GiB
 | `start-ptq1-mtp-*.bat` | 上表六档启动器 |
 | `allow-firewall-8095.bat` | 一键（自提权）放行入站 TCP 8095 |
 | `ninfer-chat.py` / `chat-web.bat` | 聊天页 + 同源代理（引擎无内置网页、不发 CORS）+ 交付护栏 + `max_tokens` 钳制 |
+| `panel.py` / `panel.html` / `panel.bat` | **本机控制面板**（一键启停引擎 + 指标 + 逐请求读数），默认 <http://127.0.0.1:8093/> |
+| `panel-app.bat` + `manifest.webmanifest` + `panel-icon*` | **桌面应用入口**（Edge/Chrome `--app=` 无地址栏窗口）与 PWA 清单/图标 |
 | `ninfer-cli.py` / `chat-cli.bat` | 终端聊天（不经浏览器） |
 | `agent\agent-min.py` / `agent.bat` / `agent-lan.bat` | 最小 AI agent（工具循环 + 手册护栏 + 文件沙箱；`agent-lan` 用于连接远端引擎） |
 | `usage-dashboard.py` / `usage.bat` | 用量看板（读引擎结构化请求日志 + 统计口） |
@@ -83,6 +89,60 @@ max_context  262144 ->  6.28 GiB     524288 -> 12.56 GiB
 | `demos\` | 示例提示词与产出（单文件 HTML 蜻蜓闹钟） |
 | `docs\` | 换设备部署指南、手册落地记录、局域网验证记录 |
 | `records\` | 全部工程记录：逐轮读数、被拒原文、隔离实验、生成与验证脚本 |
+
+## 本机 8 GB 档：关闭独显直连后的设备池
+
+关闭"独显直连"（显示由核显驱动）后，显示占用不再计入独显，
+本机实测可用的最高设备池档是 **15,360 token**：
+
+| 档位 | 设备池 | 运行时预留（实测） | 备注 |
+|---|---|---|---|
+| `start-ptq1-mtp-igpu.bat` | **15,360** | 896.9 MiB（`capacity \| KV 15,360 tokens, k8v4, explicit \| pages 240/4,096`） | 本机推荐档 |
+| `start-ptq1-mtp-8gb-tight.bat` | 12,288 | — | 第一降级 |
+| `start-ptq1-mtp-8gb-pool7168.bat` | 7,168 | — | 老 8 GB 档 |
+| `start-ninfer.bat` | 链式 | — | igpu15360 → 12288 → 7168 → tight，成功即停 |
+
+设备池预留的实测公式：**`520,576,768 B + 27,336 B × 池`**。
+实测天花板约 **17,600**；`20,480` 已确认装不下（启动被拒）。
+两档都不需要 CUDA Graph（`--no-cuda-graph`，graph 会多要 814–850 MiB）。
+
+## 控制面板 · 桌面应用
+
+把启停、状态与逐请求读数收进一个纯标准库的本地服务，并给它套一个可双击的窗口。
+
+| 文件 | 作用 |
+|---|---|
+| `panel.py` | 面板服务：`GET /`、`/panel.html`、`/manifest.webmanifest`、`/favicon.ico`、图标；`GET /api/state`；`POST /api/engine/start\|stop\|restart`、`/api/page/start` |
+| `panel.html` | 仪表盘：状态灯（空闲/读取中/生成中/离线）、8 张指标卡（速度/GPU 负载/显存/温度/功耗/PCIe/CPU/内存）、上下文占用环、最近的请求表（时间/状态/题面/复用/输出/tok·s/命中率/首字/耗时）、引擎输出尾部 |
+| `panel.bat` | 起面板并打开浏览器（默认 <http://127.0.0.1:8093/>） |
+| `panel-app.bat` | **桌面应用入口**：先确保面板服务在跑，再用 Edge/Chrome 的 `--app=` 打开无地址栏窗口；支持 `NINFER_POOL` / `NINFER_WIN` / `NINFER_PY` 覆盖 |
+| `manifest.webmanifest` + `panel-icon*.png|ico` | PWA 清单与图标：Edge 里「⋯ → 应用 → 安装此站点为应用」可得到开始菜单/任务栏条目 |
+
+- 端口约定：面板 **8093**、引擎 8095、聊天页 8097、用量看板 8098 —— 各自独立，互不抢占。
+- `--autostart-engine`（`panel-app.bat` 默认带上）：面板起来 1 秒后自动按
+  15360 → 12288 → 8192 → 7168 的重试链拉起引擎。
+- **引擎是独立进程**：关掉面板窗口 ≠ 停引擎；面板只接管"自己启动的"那个引擎的日志，
+  别人的引擎只能看端口状态。
+- 判据都是硬的：「启动」要求端口上的 PID 就是本次启动的进程；
+  「停止」要求端口/进程真的消失，没停掉会如实报失败而不是假成功。
+- 面板只监听 `127.0.0.1`，不需要联网，也不需要 `psutil`（ctypes 读系统计数）。
+
+## 客户端预算与设备池对齐（踩过的坑）
+
+引擎日志能唯一地证明这件事：`req#N started | ... max output M` 与
+`req#N done | ... output limit | prompt P | output 1`。
+
+- 客户端（DeepSeek Harness）的解码预算是 `max_tokens = contextWindow − 题面`，
+  题面一超过声明值就被夹成 **1** —— 症状是"只回一个字"，工具调用还会变成
+  `tool markup returned as text | malformed structure`。
+- 客户端的 token 估算比引擎实际计数**高约 40%**（中文长会话更明显）：
+  引擎实测 9,514 → 客户端按 ~13,315 扣预算；引擎实测 14,209 → 客户端已按 ≥15,360 扣。
+  ⇒ 声明 15,360 时，客户端侧实际只喂到约 11k 真实 token。
+- 对策：`contextWindow` 必须等于启动器的 `--kv-capacity`；
+  压缩阈值（`thresholdRatio`）要留出足够生成摘要的余量；
+  **一旦越线只能新开会话** —— 压缩本身也要生成 token，同样会被夹成 1。
+- 引擎侧越池时会打印 `prompt exceeds the resident Device KV pool`，
+  并实测"题面中段可能悄悄丢失、HTTP 200 但答案是错的"，所以宁可降档也不要越池。
 
 ## 许可与归属
 
