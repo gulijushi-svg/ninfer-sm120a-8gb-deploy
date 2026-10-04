@@ -1,7 +1,7 @@
 # NInfer sm_120a 引擎包 · 8 GB 显卡（RTX 5060）部署工具集
 
 本仓库**只包含我们自己写的脚本、文档与实验记录**，用于把一台 8 GB 显存的机器
-（NVIDIA GeForce RTX 5060，compute capability 12.0）跑通 **NInfer `sm_120a` 引擎包**（PTQ1_0 档）。
+（NVIDIA GeForce RTX 5060 Laptop GPU，compute capability 12.0）跑通 **NInfer `sm_120a` 引擎包**（PTQ1_0 档）。
 
 ## 不包含什么（重要）
 
@@ -61,12 +61,15 @@ max_context  262144 ->  6.28 GiB     524288 -> 12.56 GiB
 **环境变量**：`NINFER_KV_WINDOW=16384` 是**打开 KVMem（ring + 内容打分）的开关**，删了就退回词法排序；
 `NINFER_HOST_PAGEABLE=1` 在 Windows 上必需（钉住的主机内存会映射进 GPU 地址空间、与显存抢地盘）。
 
-## 关键实测读数（RTX 5060 8 GB / 驱动 591.86）
+## 关键实测读数（RTX 5060 Laptop GPU 8 GB / 驱动 616.64）
 
 | 项 | 读数 |
 |---|---|
-| 引擎启动 | `engine ready | bonsai2-27b | total 3.7s`；`capacity | KV 8,192 tokens, k8v4, explicit | runtime 710.0 MiB` |
-| 数数字语料 1,000 进 / 1,000 出 | prefill 482–670 tok/s · decode 54–99 tok/s · MTP 接受 780/875 = 89.1% |
+| 引擎启动（集显档） | `capacity \| KV 15,360 tokens, k8v4, explicit \| pages 240/4,096 \| runtime 896.9 MiB`；冷启动约 4–6 s（页缓存热时 2 s） |
+| 前缀复用（同一会话） | 实测命中 **68.5%** 与 **99.6%**（长对话里绝大部分题面直接复用 KV，不必重算） |
+| 单次请求读数（DSH 工具调用） | TTFT 3.3 s · total 3.7 s · decode 78.5 tok/s · MTP 接受 24/24 = 100% |
+| 显示 | 关闭独显直连后显示由核显驱动：`display_active=Disabled`，引擎占用约 7.7 / 8.15 GiB |
+| 数数字语料 1,000 进 / 1,000 出（旧 8,192 档） | prefill 482–670 tok/s · decode 54–99 tok/s · MTP 接受 780/875 = 89.1% |
 | 与构建机（RTX 4080 SUPER，decode 196.8 tok/s）对比 | 慢约 3.3×（带宽 448 vs 736 GB/s；为装进 8 GB 关闭了 CUDA Graph） |
 | 工具调用 | 支持；`finish_reason=tool_calls` + 规范 `tool_calls` 数组 |
 | **同配置重复测量波动** | 同一档两次测出 **54.7** 与 **80.0 tok/s**（差 46%）⇒ 单次读数不可作准，须重复取中位数 |
@@ -143,6 +146,21 @@ max_context  262144 ->  6.28 GiB     524288 -> 12.56 GiB
   **一旦越线只能新开会话** —— 压缩本身也要生成 token，同样会被夹成 1。
 - 引擎侧越池时会打印 `prompt exceeds the resident Device KV pool`，
   并实测"题面中段可能悄悄丢失、HTTP 200 但答案是错的"，所以宁可降档也不要越池。
+
+## 与上游仓库的关系
+
+本仓库是**一次真实部署的完整记录**：结构参考上游引擎包工具集
+（<https://github.com/AAANDYYY-A/ninfer-sm120a-8gb-toolkit>，MIT 精神上的"照抄作业本"），
+但下列内容都是这次部署里**实测出来、上游没有的**：
+
+- 关闭独显直连之后的 **15,360 设备池**档、链式降级启动器，以及设备池预留公式；
+- **控制面板 + 桌面应用**（`panel.py` / `panel.html` / `panel.bat` / `panel-app.bat`、
+  PWA 清单与图标）；
+- 客户端预算陷阱的完整证据链（引擎日志里 `max output 1` 与 `output 1` 的对照）；
+- 本机档下的前缀复用、MTP 接受率、工具调用读数，以及"同配置重复测量会差 46%"这类
+  必须写下来的测量纪律。
+
+引擎二进制与模型权重**同样不在本仓库**（体积 + 归属原因，见上表）。
 
 ## 许可与归属
 
