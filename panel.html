@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/panel-icon.png">
+<link rel="apple-touch-icon" href="/panel-icon-192.png">
+<meta name="theme-color" content="#16a34a">
+<title>NInfer 控制台</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --line:#e8eaee; --ink:#111827; --dim:#6b7280;
+    --green:#16a34a; --green-soft:#dcfce7; --amber:#f59e0b; --red:#dc2626; --blue:#2563eb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.5 "Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  .wrap{max-width:1500px;margin:0 auto;padding:18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;
+        box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  .state .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .state .title{font-size:17px;font-weight:600;margin-right:6px}
+  .pill{padding:3px 11px;border-radius:999px;font-size:12px;background:#f1f3f6;color:var(--dim);
+        border:1px solid transparent}
+  .pill.on{background:var(--green-soft);color:#15803d;border-color:#bbf7d0;font-weight:600}
+  .pill.on.warn{background:#fef3c7;color:#b45309;border-color:#fde68a}
+  .pill.on.err{background:#fee2e2;color:#b91c1c;border-color:#fecaca}
+  .spacer{flex:1}
+  .muted{color:var(--dim);font-size:13px}
+  .track{height:6px;background:#eef0f4;border-radius:999px;overflow:hidden;margin-top:12px}
+  .track > i{display:block;height:100%;width:0;background:var(--green);transition:width .4s}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:14px}
+  .grid2{display:grid;grid-template-columns:340px 1fr;gap:14px;margin-top:14px}
+  @media (max-width:1100px){.grid4{grid-template-columns:repeat(2,1fr)}
+                            .grid2{grid-template-columns:1fr}}
+  .lbl{color:var(--dim);font-size:13px;display:flex;align-items:center;gap:7px}
+  .big{font-size:34px;font-weight:700;letter-spacing:-.5px;margin-top:8px}
+  .big small{font-size:15px;font-weight:600;color:var(--dim);margin-left:3px}
+  .sub{color:var(--dim);font-size:12px;margin-top:2px}
+  .ringwrap{display:flex;align-items:center;gap:18px;margin-top:14px}
+  .ring{width:132px;height:132px;border-radius:50%;flex:0 0 132px;
+        background:conic-gradient(var(--green) 0deg, #eef0f4 0deg);position:relative}
+  .ring::after{content:"";position:absolute;inset:13px;background:var(--card);border-radius:50%}
+  .ring .mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+             justify-content:center;z-index:2}
+  .ring .pct{font-size:26px;font-weight:700}
+  .ring .cap{font-size:12px;color:var(--dim)}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:13px}
+  .kv:last-child{border-bottom:0}
+  .kv b{font-weight:600}
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  th{text-align:left;color:var(--dim);font-weight:500;font-size:12px;padding:6px 8px;
+     border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:7px 8px;border-bottom:1px solid #f2f4f7;white-space:nowrap}
+  tbody tr:hover{background:#fafbfc}
+  .tag{padding:2px 8px;border-radius:999px;font-size:11px;background:var(--green-soft);color:#15803d}
+  .tag.warn{background:#fef3c7;color:#b45309}
+  .tag.bad{background:#fee2e2;color:#b91c1c}
+  .btns{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+  button{border:1px solid var(--line);background:#fff;color:var(--ink);padding:9px 15px;
+         border-radius:10px;font-size:13px;font-weight:600;cursor:pointer}
+  button:hover{background:#f7f8fa}
+  button.primary{background:var(--green);border-color:var(--green);color:#fff}
+  button.primary:hover{background:#15803d}
+  button.danger{color:var(--red);border-color:#fecaca}
+  button[disabled]{opacity:.5;cursor:not-allowed}
+  a.link{color:var(--blue);text-decoration:none;font-weight:600;font-size:13px}
+  pre{margin:10px 0 0;background:#0f172a;color:#cbd5e1;border-radius:10px;padding:12px;
+      font:12px/1.55 Consolas,"Courier New",monospace;max-height:210px;overflow:auto}
+  #toast{position:fixed;right:18px;bottom:18px;background:#111827;color:#fff;padding:11px 16px;
+         border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;max-width:520px;z-index:9}
+  #toast.show{opacity:.95}
+  .off{color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card state">
+    <div class="row">
+      <span class="title">模型状态</span>
+      <span class="pill" id="p-idle">空闲</span>
+      <span class="pill" id="p-reading">读取中</span>
+      <span class="pill" id="p-gen">生成中</span>
+      <span class="pill" id="p-err">离线 / 错误</span>
+      <span class="spacer"></span>
+      <span class="muted" id="lastline">正在读取…</span>
+    </div>
+    <div class="track"><i id="barstate"></i></div>
+  </div>
+
+  <div class="grid4">
+    <div class="card">
+      <div class="lbl">速度</div>
+      <div class="big" id="speed">—<small>tok/s</small></div>
+      <div class="sub" id="speed-sub">上次请求 decode</div>
+      <div class="track"><i id="barspeed"></i></div>
+    </div>
+    <div class="card">
+      <div class="lbl">GPU 负载</div>
+      <div class="big" id="util">—<small>%</small></div>
+      <div class="sub" id="gpuname">—</div>
+      <div class="track"><i id="barutil"></i></div>
+    </div>
+    <div class="card">
+      <div class="lbl">显存</div>
+      <div class="big" id="vram">—<small>MiB</small></div>
+      <div class="sub" id="vram-sub">设备池 —</div>
+      <div class="track"><i id="barvram"></i></div>
+    </div>
+    <div class="card">
+      <div class="lbl">GPU 温度</div>
+      <div class="big" id="temp">—<small>°C</small></div>
+      <div class="sub">热限通常 87 °C</div>
+      <div class="track"><i id="bartemp"></i></div>
+    </div>
+  </div>
+
+  <div class="grid4">
+    <div class="card">
+      <div class="lbl">功耗</div>
+      <div class="big" id="power">—<small>W</small></div>
+      <div class="sub" id="power-sub">上限 —</div>
+      <div class="track"><i id="barpower"></i></div>
+    </div>
+    <div class="card">
+      <div class="lbl">PCIe</div>
+      <div class="big" id="pcie">—</div>
+      <div class="sub">当前链路代宽（空闲会降速）</div>
+      <div class="track"><i style="width:100%;background:#93c5fd"></i></div>
+    </div>
+    <div class="card">
+      <div class="lbl">CPU</div>
+      <div class="big" id="cpu">—<small>%</small></div>
+      <div class="sub" id="cpucores">—</div>
+      <div class="track"><i id="barcpu"></i></div>
+    </div>
+    <div class="card">
+      <div class="lbl">内存</div>
+      <div class="big" id="ram">—<small>GB</small></div>
+      <div class="sub" id="ram-sub">总 —</div>
+      <div class="track"><i id="barram"></i></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="lbl">上下文占用</div>
+      <div class="ringwrap">
+        <div class="ring" id="ring">
+          <div class="mid">
+            <div class="pct" id="ctxpct">—</div>
+            <div class="cap" id="ctxcap">池 — </div>
+          </div>
+        </div>
+        <div style="flex:1">
+          <div class="kv"><span>设备池 KV</span><b id="pool">—</b></div>
+          <div class="kv"><span>页占用</span><b id="pages">—</b></div>
+          <div class="kv"><span>运行内存</span><b id="runtime">—</b></div>
+          <div class="kv"><span>权重</span><b id="weights">—</b></div>
+          <div class="kv"><span>上次题面 / 输出</span><b id="lastio">—</b></div>
+          <div class="kv"><span>前缀复用</span><b id="cache">—</b></div>
+          <div class="kv"><span>MTP 投机命中</span><b id="mtp">—</b></div>
+          <div class="kv"><span>引擎进程</span><b id="pid">—</b></div>
+        </div>
+      </div>
+      <div class="muted" id="warn" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
+      <div class="lbl">最近的请求 <span class="muted" id="reqcount"></span></div>
+      <div style="overflow:auto;max-height:360px">
+        <table>
+          <thead><tr>
+            <th>时间</th><th>状态</th><th>题面</th><th>复用</th><th>输出</th>
+            <th>tok/s</th><th>命中率</th><th>首字</th><th>耗时</th>
+          </tr></thead>
+          <tbody id="reqs"><tr><td colspan="9" class="off">还没有请求</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <div class="btns">
+      <button class="primary" id="b-start">启动引擎</button>
+      <button id="b-restart">重启引擎</button>
+      <button class="danger" id="b-stop">停止引擎</button>
+      <span style="width:1px;height:26px;background:var(--line)"></span>
+      <button id="b-page">启动聊天页</button>
+      <a class="link" id="a-page" href="http://127.0.0.1:8097/" target="_blank">打开聊天页 →</a>
+      <span class="spacer"></span>
+      <span class="muted" id="cfgline"></span>
+    </div>
+    <div class="muted" style="margin-top:10px">
+      面板只在本机 127.0.0.1 上监听；「启动引擎」用的是与
+      <code>start-ptq1-mtp-igpu.bat</code> 相同的参数，池不够会自动降级
+      （15360 → 12288 → 8192 → 7168）。
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <div class="lbl">引擎输出（最近 12 行）</div>
+    <pre id="tail">—</pre>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmt = (v, d=1) => (v === null || v === undefined || isNaN(v)) ? "—" : Number(v).toFixed(d);
+const pct = (v, max) => Math.max(0, Math.min(100, max ? (v / max) * 100 : 0));
+
+function toast(msg, ms = 5000){
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast._h); toast._h = setTimeout(() => t.classList.remove("show"), ms);
+}
+
+function pill(which){
+  ["p-idle","p-reading","p-gen","p-err"].forEach(id => $(id).classList.remove("on","warn","err"));
+  if (which === "idle") $("p-idle").classList.add("on");
+  if (which === "reading") $("p-reading").classList.add("on");
+  if (which === "generating") $("p-gen").classList.add("on");
+  if (which === "error") $("p-err").classList.add("on","err");
+}
+
+async function refresh(){
+  let s;
+  try { s = await (await fetch("/api/state", {cache:"no-store"})).json(); }
+  catch(e){ return; }
+  const E = s.engine, G = s.gpu || {}, Y = s.sys || {}, L = s.last;
+
+  pill(E.up ? (E.pending ? "generating" : "idle") : "error");
+  const stateText = E.up
+      ? (E.pending ? "正在处理请求…" : "等待请求")
+      : "引擎未运行 —— 点下面「启动引擎」";
+  const lastText = L
+      ? `上次：题面 ${L.prompt ?? "—"} · 输出 ${L.output ?? "—"} · ${fmt(L.decode)} tok/s`
+      : (E.up ? "本次启动还没有请求" : "—");
+  $("lastline").textContent = stateText + "　|　" + lastText;
+  $("barstate").style.width = E.up ? (E.pending ? "100%" : "0%") : "100%";
+  $("barstate").style.background = E.up ? "var(--green)" : "var(--red)";
+
+  $("speed").innerHTML = fmt(L && L.decode) + "<small>tok/s</small>";
+  $("speed-sub").textContent = L && L.prefill ? `prefill ${fmt(L.prefill)} tok/s · 上次请求` : "上次请求 decode";
+  $("barspeed").style.width = pct(L && L.decode, 150) + "%";
+
+  $("util").innerHTML = (G.util === null || G.util === undefined ? "—" : fmt(G.util, 0)) + "<small>%</small>";
+  $("gpuname").textContent = G.name || (G.error || "—");
+  $("barutil").style.width = pct(G.util, 100) + "%";
+
+  $("vram").innerHTML = (G.mem_used === null || G.mem_used === undefined ? "—" : fmt(G.mem_used, 0)) + "<small>MiB</small>";
+  $("vram-sub").textContent = `设备池 ${E.pool ?? "—"} · 运行 ${fmt(E.runtime_mib)} MiB`;
+  $("barvram").style.width = pct(G.mem_used, G.mem_total) + "%";
+
+  $("temp").innerHTML = fmt(G.temp, 0) + "<small>°C</small>";
+  $("bartemp").style.width = pct(G.temp, 87) + "%";
+
+  $("power").innerHTML = fmt(G.power, 0) + "<small>W</small>";
+  $("power-sub").textContent = "上限 " + (G.power_limit ? fmt(G.power_limit, 0) + " W" : "—");
+  $("barpower").style.width = pct(G.power, G.power_limit) + "%";
+
+  $("pcie").textContent = (G.pcie_gen && G.pcie_gen !== "?" ? "Gen" + G.pcie_gen + " ×" + G.pcie_width : "—");
+
+  $("cpu").innerHTML = fmt(Y.cpu, 0) + "<small>%</small>";
+  $("barcpu").style.width = pct(Y.cpu, 100) + "%";
+
+  $("ram").innerHTML = fmt(Y.ram_used_gb) + "<small>GB</small>";
+  $("ram-sub").textContent = "总 " + fmt(Y.ram_total_gb) + " GB";
+
+  const C = s.context;
+  $("ctxpct").textContent = C ? fmt(C.fill_pct, 0) + "%" : "—";
+  $("ctxcap").textContent = C ? `${C.prompt} / ${C.pool}` : (E.pool ? `池 ${E.pool}` : "池 —");
+  $("ring").style.background = `conic-gradient(var(--green) 0deg ${C ? C.fill_pct * 3.6 : 0}deg, #eef0f4 0deg)`;
+
+  $("pool").textContent = E.pool ?? "—";
+  $("pages").textContent = E.pages ?? "—";
+  $("runtime").textContent = E.runtime_mib ? fmt(E.runtime_mib) + " MiB" : "—";
+  $("weights").textContent = E.weights_gib ? fmt(E.weights_gib, 2) + " GiB" : "—";
+  $("lastio").textContent = L ? `${L.prompt ?? "—"} / ${L.output ?? "—"}` : "—";
+  $("cache").textContent = L && L.cache_pct !== null && L.cache_pct !== undefined
+      ? `${L.cache_tokens} tok（${fmt(L.cache_pct)}%）` : "—";
+  $("mtp").textContent = (L && L.mtp) ? L.mtp : "—";
+  $("pid").textContent = E.pid ? ("pid " + E.pid + (E.up ? " · 运行中" : "")) : (E.up ? "外部启动" : "未运行");
+
+  $("warn").innerHTML = "";
+  if (E.over_pool)
+    $("warn").innerHTML = `<span style="color:var(--amber)">⚠ 超池警告：题面 ${E.over_pool.prompt} > 池 ${E.over_pool.pool} —— 这种请求的答案是未验证的，中间内容可能丢失</span>`;
+  else if (E.last_fatal)
+    $("warn").innerHTML = `<span style="color:var(--red)">✕ 上次启动被显存拒绝：需要 ${E.last_fatal.requires} B，可用 ${E.last_fatal.available} B</span>`;
+  else if (E.up && !E.log_available)
+    $("warn").innerHTML = `<span class="muted">当前引擎不是面板启动的，读不到它的日志 → 请求明细与池信息不可用（点「重启引擎」可由面板接管）</span>`;
+
+  const rows = s.requests || [];
+  $("reqcount").textContent = rows.length ? `（最近 ${rows.length} 条）` : "";
+  $("reqs").innerHTML = rows.length ? rows.map(r => {
+    const done = r.done !== false;
+    const cls = !done ? "warn" : ((r.finish === "输出上限") ? "warn" : "");
+    return `<tr>
+      <td class="off">${(r.at || r.started || "").slice(11) || "—"}</td>
+      <td><span class="tag ${cls}">${done ? (r.finish || "完成") : "生成中"}</span></td>
+      <td>${r.prompt ?? "—"}</td>
+      <td>${r.cache_tokens ?? "—"}</td>
+      <td>${r.output ?? "—"}</td>
+      <td>${fmt(r.decode)}</td>
+      <td>${r.cache_pct !== null && r.cache_pct !== undefined ? fmt(r.cache_pct) + "%" : "—"}</td>
+      <td>${r.ttft !== null && r.ttft !== undefined ? fmt(r.ttft) + "s" : "—"}</td>
+      <td>${r.total !== null && r.total !== undefined ? fmt(r.total) + "s" : "—"}</td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="9" class="off">还没有请求</td></tr>`;
+
+  $("tail").textContent = (s.tail && s.tail.length) ? s.tail.join("\n") : "—";
+  $("a-page").style.opacity = s.page && s.page.up ? 1 : .45;
+  $("cfgline").textContent = `引擎端口 ${s.cfg.engine_port} · 目标池 ${s.cfg.pool} · 模型 ${s.cfg.model}`;
+}
+
+async function act(kind){
+  const busy = {start:"b-start", restart:"b-restart", stop:"b-stop", page:"b-page"}[kind];
+  const btn = $(busy);
+  const old = btn.textContent;
+  ["b-start","b-restart","b-stop","b-page"].forEach(id => $(id).disabled = true);
+  btn.textContent = kind === "stop" ? "停止中…" : "处理中…";
+  try {
+    const r = await (await fetch("/api/" + (kind === "page" ? "page/start" : "engine/" + kind),
+                                 {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"})).json();
+    const msg = kind === "restart" ? (r.start && r.start.message) : r.message;
+    toast((r.ok ? "✅ " : "⚠ ") + (msg || JSON.stringify(r)), r.ok ? 5000 : 9000);
+  } catch(e){ toast("⚠ 请求失败：" + e, 9000); }
+  finally {
+    ["b-start","b-restart","b-stop","b-page"].forEach(id => $(id).disabled = false);
+    btn.textContent = old;
+    refresh();
+  }
+}
+
+$("b-start").onclick   = () => act("start");
+$("b-restart").onclick = () => act("restart");
+$("b-stop").onclick    = () => act("stop");
+$("b-page").onclick    = () => act("page");
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>
