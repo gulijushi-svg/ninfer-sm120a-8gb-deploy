@@ -1,0 +1,14 @@
+{
+  "name": "NInfer 控制台",
+  "short_name": "NInfer",
+  "description": "本地大模型引擎的监控与一键启停面板",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f7f9",
+  "theme_color": "#16a34a",
+  "icons": [
+    { "src": "/panel-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/panel-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
